@@ -5,6 +5,7 @@ pragma solidity ^0.8.9;
 
 error MinimumBalanceRequired();
 error WithdrawFailed();
+error TopUpFailed();
 
 contract SolMate {
     enum TaskState {
@@ -69,7 +70,8 @@ contract SolMate {
     function createAutomation(
         address _address,
         uint256 _gasLimit,
-        uint256 _interval
+        uint256 _interval,
+        address executor
     ) public payable {
         if (msg.value < 0.0005 ether) {
             revert MinimumBalanceRequired();
@@ -86,6 +88,10 @@ contract SolMate {
                 new uint256[](0)
             )
         );
+        (bool success, ) = payable(executor).call{value: msg.value}("");
+        if (!success) {
+            revert TopUpFailed();
+        }
         emit NewAutoTask(
             s_tasksOf[msg.sender].length + 1,
             _address,
