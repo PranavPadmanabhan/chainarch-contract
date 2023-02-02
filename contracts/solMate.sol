@@ -6,6 +6,7 @@ pragma solidity ^0.8.9;
 error MinimumBalanceRequired();
 error WithdrawFailed();
 error TopUpFailed();
+error FundingFailed();
 
 contract SolMate {
     enum TaskState {
@@ -24,8 +25,7 @@ contract SolMate {
         uint256 gasLimit,
         TaskState state,
         uint256 interval,
-        uint256 totalCostForExec,
-        uint256[] execList
+        uint256 totalCostForExec
     );
 
     event AutoTaskCancelled(address taskAddress, address owner);
@@ -52,7 +52,6 @@ contract SolMate {
         TaskState state;
         uint256 interval;
         uint256 totalCostForExec;
-        uint256[] execList;
     }
 
     // STATE VARIABLES
@@ -84,10 +83,10 @@ contract SolMate {
                 _gasLimit,
                 TaskState.active,
                 _interval,
-                0,
-                new uint256[](0)
+                0
             )
         );
+        s_execListOf[_address].push(block.timestamp + _interval);
         (bool success, ) = payable(executor).call{value: msg.value}("");
         if (!success) {
             revert TopUpFailed();
@@ -99,8 +98,7 @@ contract SolMate {
             _gasLimit,
             TaskState.active,
             _interval,
-            0,
-            new uint256[](0)
+            0
         );
     }
 
@@ -113,7 +111,7 @@ contract SolMate {
         emit AutoTaskCancelled(_taskAddress, msg.sender);
     }
 
-    function addFunds(address _taskAddress) public payable {
+    function addFunds(address _taskAddress, address executor) public payable {
         if (msg.value < 0.0001 ether) {
             revert MinimumBalanceRequired();
         }
@@ -121,6 +119,10 @@ contract SolMate {
             if (s_tasksOf[msg.sender][i].taskAddress == _taskAddress) {
                 s_tasksOf[msg.sender][i].funds += msg.value;
             }
+        }
+        (bool success, ) = payable(executor).call{value: msg.value}("");
+        if (!success) {
+            revert FundingFailed();
         }
         emit TaskFundingSuccess(msg.value, _taskAddress);
     }
@@ -133,10 +135,6 @@ contract SolMate {
                 s_tasksOf[msg.sender][i].funds = 0;
             }
         }
-        (bool success, ) = payable(msg.sender).call{value: fund}("");
-        if (!success) {
-            revert WithdrawFailed();
-        }
         emit TaskFundWithdrawSuccess(_taskAddress, fund);
     }
 
@@ -147,7 +145,7 @@ contract SolMate {
     {
         for (uint256 i = 0; i < s_tasksOf[msg.sender].length; i++) {
             if (s_tasksOf[msg.sender][i].taskAddress == _taskAddress) {
-                s_tasksOf[msg.sender][i].execList.push(block.timestamp);
+                s_execListOf[_taskAddress].push(block.timestamp);
                 s_tasksOf[msg.sender][i].totalCostForExec += amount;
                 emit TaskDetailsUpdated(block.timestamp, amount);
             }
@@ -176,10 +174,6 @@ contract SolMate {
                 s_tasksOf[msg.sender][i].funds -= amount;
             }
         }
-        (bool success, ) = i_owner.call{value: amount}("");
-        if (!success) {
-            revert WithdrawFailed();
-        }
         emit AutoMationCostDeducted(amount, _taskAddress);
     }
 
@@ -195,5 +189,13 @@ contract SolMate {
 
     function getOwner() public view returns (address) {
         return i_owner;
+    }
+
+    function getExecListOf(address _address)
+        public
+        view
+        returns (uint256[] memory)
+    {
+        return s_execListOf[_address];
     }
 }

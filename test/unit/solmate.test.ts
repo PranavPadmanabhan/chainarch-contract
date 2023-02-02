@@ -14,6 +14,7 @@ import { string } from "hardhat/internal/core/params/argumentTypes";
       let interval: number = 600;
       let accounts: any;
       let funds: any = ethers.utils.parseEther("0.007");
+      let executor = "0xAfF6aF0bE557873Fbc3d8038BAC733641f98F3B6";
       beforeEach(async () => {
         deployer = (await getNamedAccounts()).deployer;
         accounts = await ethers.getSigners();
@@ -37,6 +38,7 @@ import { string } from "hardhat/internal/core/params/argumentTypes";
             address,
             gasLimit,
             interval,
+            deployer,
             { value: funds }
           );
           const rec = await tx.wait(1);
@@ -50,7 +52,6 @@ import { string } from "hardhat/internal/core/params/argumentTypes";
         it("should update details", async () => {
           const tasks = await solMateContract.getTasksOf(deployer);
           const {
-            execList,
             funds,
             gasLimit: _gasLimit,
             taskAddress,
@@ -59,11 +60,12 @@ import { string } from "hardhat/internal/core/params/argumentTypes";
             state,
             interval: _int,
           } = tasks[0];
+          const execList = await solMateContract.getExecListOf(address);
           assert(tasks.length > 0);
           assert.equal(id.toString(), "1");
           assert.equal(funds.toString(), funds.toString());
           assert.equal(_gasLimit.toString(), gasLimit.toString());
-          assert.equal(execList.length, 0);
+          assert(execList.length === 1);
           assert.equal(totalCostForExec.toString(), "0");
           assert.equal(taskAddress.toString(), address.toString());
           assert.equal(_int.toString(), interval.toString());
@@ -71,18 +73,30 @@ import { string } from "hardhat/internal/core/params/argumentTypes";
         });
         it("should emit the event", async () => {
           await expect(
-            solMateContract.createAutomation(address, gasLimit, interval, {
-              value: funds,
-            })
+            solMateContract.createAutomation(
+              address,
+              gasLimit,
+              interval,
+              deployer,
+              {
+                value: funds,
+              }
+            )
           ).to.emit(solMateContract, "NewAutoTask");
         });
       });
 
       describe("cancelAutomation", async () => {
         beforeEach(async () => {
-          await solMateContract.createAutomation(address, gasLimit, interval, {
-            value: funds,
-          });
+          await solMateContract.createAutomation(
+            address,
+            gasLimit,
+            interval,
+            deployer,
+            {
+              value: funds,
+            }
+          );
           await solMateContract.cancelAutomation(address);
         });
 
@@ -101,10 +115,16 @@ import { string } from "hardhat/internal/core/params/argumentTypes";
 
       describe("addFunds", async () => {
         beforeEach(async () => {
-          await solMateContract.createAutomation(address, gasLimit, interval, {
-            value: funds,
-          });
-          await solMateContract.addFunds(address, { value: funds });
+          await solMateContract.createAutomation(
+            address,
+            gasLimit,
+            interval,
+            deployer,
+            {
+              value: funds,
+            }
+          );
+          await solMateContract.addFunds(address, deployer, { value: funds });
         });
 
         it("should update fund of task", async () => {
@@ -114,16 +134,22 @@ import { string } from "hardhat/internal/core/params/argumentTypes";
         });
         it("should emit the event", async () => {
           await expect(
-            solMateContract.addFunds(address, { value: funds })
+            solMateContract.addFunds(address, deployer, { value: funds })
           ).to.emit(solMateContract, "TaskFundingSuccess");
         });
       });
 
       describe("withdrawFunds", async () => {
         beforeEach(async () => {
-          await solMateContract.createAutomation(address, gasLimit, interval, {
-            value: funds,
-          });
+          await solMateContract.createAutomation(
+            address,
+            gasLimit,
+            interval,
+            deployer,
+            {
+              value: funds,
+            }
+          );
         });
 
         it("should update fund of task", async () => {
@@ -136,14 +162,7 @@ import { string } from "hardhat/internal/core/params/argumentTypes";
           const gasCost = gasUsed.mul(effectiveGasPrice);
           const tasks = await solMateContract.getTasksOf(deployer);
           const { funds: fund } = tasks[0];
-          const finalBalance = await solMateContract.provider.getBalance(
-            deployer
-          );
           assert.equal(fund.toString(), "0");
-          assert.equal(
-            finalBalance.toString(),
-            initialBalance.add(funds).sub(gasCost).toString()
-          );
         });
         it("should emit the event", async () => {
           await expect(solMateContract.withdrawFunds(address)).to.emit(
@@ -155,9 +174,15 @@ import { string } from "hardhat/internal/core/params/argumentTypes";
 
       describe("updateTaskExecDetails", async () => {
         beforeEach(async () => {
-          await solMateContract.createAutomation(address, gasLimit, interval, {
-            value: funds,
-          });
+          await solMateContract.createAutomation(
+            address,
+            gasLimit,
+            interval,
+            deployer,
+            {
+              value: funds,
+            }
+          );
         });
 
         it("should update details of task", async () => {
@@ -167,8 +192,9 @@ import { string } from "hardhat/internal/core/params/argumentTypes";
             executionCost
           );
           const tasks = await solMateContract.getTasksOf(deployer);
-          const { execList, totalCostForExec } = tasks[0];
-          assert(execList.length == 1);
+          const { totalCostForExec } = tasks[0];
+          const execList = await solMateContract.getExecListOf(address);
+          assert(execList.length == 2);
           assert.equal(totalCostForExec.toString(), executionCost.toString());
         });
         it("should emit the event", async () => {
@@ -181,9 +207,15 @@ import { string } from "hardhat/internal/core/params/argumentTypes";
 
       describe("updateTaskGasLimit", async () => {
         beforeEach(async () => {
-          await solMateContract.createAutomation(address, gasLimit, interval, {
-            value: funds,
-          });
+          await solMateContract.createAutomation(
+            address,
+            gasLimit,
+            interval,
+            deployer,
+            {
+              value: funds,
+            }
+          );
         });
 
         it("should update gasLimit of task", async () => {
@@ -207,9 +239,15 @@ import { string } from "hardhat/internal/core/params/argumentTypes";
 
       describe("updateTaskFunds", async () => {
         beforeEach(async () => {
-          await solMateContract.createAutomation(address, gasLimit, interval, {
-            value: funds,
-          });
+          await solMateContract.createAutomation(
+            address,
+            gasLimit,
+            interval,
+            deployer,
+            {
+              value: funds,
+            }
+          );
         });
 
         it("should update fund of task", async () => {
