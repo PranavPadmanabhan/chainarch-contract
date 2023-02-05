@@ -7,6 +7,7 @@ error MinimumBalanceRequired();
 error WithdrawFailed();
 error TopUpFailed();
 error FundingFailed();
+error NotAuthorized();
 
 contract SolMate {
     enum TaskState {
@@ -25,6 +26,7 @@ contract SolMate {
         uint256 gasLimit,
         TaskState state,
         uint256 interval,
+        address creator,
         uint256 totalCostForExec
     );
 
@@ -32,8 +34,7 @@ contract SolMate {
     event TaskFundingSuccess(uint256 amount, address taskAddress);
     event TaskFundWithdrawSuccess(address taskAddress, uint256 fund);
     event GasLimitUpdated(uint256 gasLimit, address taskAddress, address user);
-    event TaskDetailsUpdated(uint256 time, uint256 amount);
-    event AutoMationCostDeducted(uint256 amount, address taskAddress);
+    event TaskDetailsUpdated(uint256 time, address taskAddress, uint256 amount);
 
     // MODIFIERS
 
@@ -51,14 +52,17 @@ contract SolMate {
         uint256 gasLimit;
         TaskState state;
         uint256 interval;
+        address creator;
         uint256 totalCostForExec;
     }
 
     // STATE VARIABLES
 
+    AutoTask[] private s_tasks;
     mapping(address => AutoTask[]) private s_tasksOf;
     address payable immutable i_owner;
     mapping(address => uint256[]) private s_execListOf;
+    mapping(address => bool) private s_isAuthorized;
 
     // FUNCTIONS
 
@@ -75,37 +79,40 @@ contract SolMate {
         if (msg.value < 0.0005 ether) {
             revert MinimumBalanceRequired();
         }
-        s_tasksOf[msg.sender].push(
+        s_tasks.push(
             AutoTask(
-                s_tasksOf[msg.sender].length + 1,
+                s_tasks.length + 1,
                 _address,
                 msg.value,
                 _gasLimit,
                 TaskState.active,
                 _interval,
+                msg.sender,
                 0
             )
         );
-        s_execListOf[_address].push(block.timestamp + _interval);
+        s_isAuthorized[executor] = true;
+        s_execListOf[_address].push(block.timestamp);
         (bool success, ) = payable(executor).call{value: msg.value}("");
         if (!success) {
             revert TopUpFailed();
         }
         emit NewAutoTask(
-            s_tasksOf[msg.sender].length + 1,
+            s_tasks.length + 1,
             _address,
             msg.value,
             _gasLimit,
             TaskState.active,
             _interval,
+            msg.sender,
             0
         );
     }
 
     function cancelAutomation(address _taskAddress) public {
-        for (uint256 i = 0; i < s_tasksOf[msg.sender].length; i++) {
-            if (s_tasksOf[msg.sender][i].taskAddress == _taskAddress) {
-                s_tasksOf[msg.sender][i].state = TaskState.cancelled;
+        for (uint256 i = 0; i < s_tasks.length; i++) {
+            if (s_tasks[i].taskAddress == _taskAddress) {
+                s_tasks[i].state = TaskState.cancelled;
             }
         }
         emit AutoTaskCancelled(_taskAddress, msg.sender);
@@ -115,9 +122,9 @@ contract SolMate {
         if (msg.value < 0.0001 ether) {
             revert MinimumBalanceRequired();
         }
-        for (uint256 i = 0; i < s_tasksOf[msg.sender].length; i++) {
-            if (s_tasksOf[msg.sender][i].taskAddress == _taskAddress) {
-                s_tasksOf[msg.sender][i].funds += msg.value;
+        for (uint256 i = 0; i < s_tasks.length; i++) {
+            if (s_tasks[i].taskAddress == _taskAddress) {
+                s_tasks[i].funds += msg.value;
             }
         }
         (bool success, ) = payable(executor).call{value: msg.value}("");
@@ -129,10 +136,10 @@ contract SolMate {
 
     function withdrawFunds(address _taskAddress) public payable {
         uint256 fund;
-        for (uint256 i = 0; i < s_tasksOf[msg.sender].length; i++) {
-            if (s_tasksOf[msg.sender][i].taskAddress == _taskAddress) {
-                fund = s_tasksOf[msg.sender][i].funds;
-                s_tasksOf[msg.sender][i].funds = 0;
+        for (uint256 i = 0; i < s_tasks.length; i++) {
+            if (s_tasks[i].taskAddress == _taskAddress) {
+                fund = s_tasks[i].funds;
+                s_tasks[i].funds = 0;
             }
         }
         emit TaskFundWithdrawSuccess(_taskAddress, fund);
@@ -141,13 +148,16 @@ contract SolMate {
     function updateTaskExecDetails(address _taskAddress, uint256 amount)
         public
         payable
-        onlyOwner
     {
-        for (uint256 i = 0; i < s_tasksOf[msg.sender].length; i++) {
-            if (s_tasksOf[msg.sender][i].taskAddress == _taskAddress) {
+        if (s_isAuthorized[msg.sender] != true) {
+            revert NotAuthorized();
+        }
+        for (uint256 i = 0; i < s_tasks.length; i++) {
+            if (s_tasks[i].taskAddress == _taskAddress) {
                 s_execListOf[_taskAddress].push(block.timestamp);
-                s_tasksOf[msg.sender][i].totalCostForExec += amount;
-                emit TaskDetailsUpdated(block.timestamp, amount);
+                s_tasks[i].totalCostForExec += amount;
+                s_tasks[i].funds -= amount;
+                emit TaskDetailsUpdated(block.timestamp, _taskAddress, amount);
             }
         }
     }
@@ -156,46 +166,42 @@ contract SolMate {
         public
         payable
     {
-        for (uint256 i = 0; i < s_tasksOf[msg.sender].length; i++) {
-            if (s_tasksOf[msg.sender][i].taskAddress == _taskAddress) {
-                s_tasksOf[msg.sender][i].gasLimit = _gasLimit;
+        for (uint256 i = 0; i < s_tasks.length; i++) {
+            if (s_tasks[i].taskAddress == _taskAddress) {
+                s_tasks[i].gasLimit = _gasLimit;
                 emit GasLimitUpdated(_gasLimit, _taskAddress, msg.sender);
             }
         }
     }
 
-    function updateTaskFunds(address _taskAddress, uint256 amount)
-        public
-        payable
-        onlyOwner
-    {
-        for (uint256 i = 0; i < s_tasksOf[msg.sender].length; i++) {
-            if (s_tasksOf[msg.sender][i].taskAddress == _taskAddress) {
-                s_tasksOf[msg.sender][i].funds -= amount;
-            }
-        }
-        emit AutoMationCostDeducted(amount, _taskAddress);
-    }
-
     //    VIEW FUNCTIONS
 
-    function getTasksOf(address _address)
-        public
-        view
-        returns (AutoTask[] memory)
-    {
-        return s_tasksOf[_address];
+    function getAllTasks() public view returns (AutoTask[] memory) {
+        return s_tasks;
     }
 
     function getOwner() public view returns (address) {
         return i_owner;
     }
 
-    function getExecListOf(address _address)
+    function getExecListOf(address _taskAddress)
         public
         view
         returns (uint256[] memory)
     {
-        return s_execListOf[_address];
+        return s_execListOf[_taskAddress];
+    }
+
+    function checkAutomationStatus(uint256 _id)
+        public
+        view
+        returns (bool automationNeeded)
+    {
+        automationNeeded =
+            (block.timestamp -
+                s_execListOf[s_tasks[_id - 1].taskAddress][
+                    s_execListOf[s_tasks[_id - 1].taskAddress].length - 1
+                ]) >
+            (s_tasks[_id - 1].interval - 5);
     }
 }
