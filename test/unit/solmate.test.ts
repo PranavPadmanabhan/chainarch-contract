@@ -18,7 +18,8 @@ import { assert, expect } from "chai";
         deployer = (await getNamedAccounts()).deployer;
         accounts = await ethers.getSigners();
         await deployments.fixture(["all"]);
-        solMateContract = await ethers.getContract("SolMate", deployer);
+        const contract = await deployments.get("SolMate")
+        solMateContract = await ethers.getContractAt("SolMate",contract.address, accounts[0]);
       });
 
       describe("constructor", async () => {
@@ -31,12 +32,11 @@ import { assert, expect } from "chai";
         });
       });
 
-      describe("createAutomation", async () => {
+      describe.only("createAutomation", async () => {
         beforeEach(async () => {
           const tx = await solMateContract.createAutomation(
             address,
             gasLimit,
-            interval,
             deployer,
             { value: funds }
           );
@@ -58,7 +58,6 @@ import { assert, expect } from "chai";
             id,
             totalCostForExec,
             state,
-            interval: _int,
           } = tasks[0];
           const execList = await solMateContract.getExecListOf(address);
           assert(tasks.length > 0);
@@ -68,7 +67,6 @@ import { assert, expect } from "chai";
           // assert(execList.length === 1);
           assert.equal(totalCostForExec.toString(), "0");
           assert.equal(taskAddress.toString(), address.toString());
-          assert.equal(_int.toString(), interval.toString());
           assert.equal(state.toString(), "0");
         });
         it("should emit the event", async () => {
@@ -76,7 +74,6 @@ import { assert, expect } from "chai";
             solMateContract.createAutomation(
               address,
               gasLimit,
-              interval,
               deployer,
               {
                 value: funds,
@@ -91,7 +88,6 @@ import { assert, expect } from "chai";
           await solMateContract.createAutomation(
             address,
             gasLimit,
-            interval,
             deployer,
             {
               value: funds,
@@ -120,7 +116,6 @@ import { assert, expect } from "chai";
           await solMateContract.createAutomation(
             address,
             gasLimit,
-            interval,
             deployer,
             {
               value: funds,
@@ -146,7 +141,6 @@ import { assert, expect } from "chai";
           await solMateContract.createAutomation(
             address,
             gasLimit,
-            interval,
             deployer,
             {
               value: funds,
@@ -174,12 +168,11 @@ import { assert, expect } from "chai";
         });
       });
 
-      describe.only("updateTaskExecDetails", async () => {
+      describe("updateTaskExecDetails", async () => {
         beforeEach(async () => {
           await solMateContract.createAutomation(
             address,
             gasLimit,
-            interval,
             deployer,
             {
               value: funds,
@@ -191,7 +184,7 @@ import { assert, expect } from "chai";
           let executionCost = ethers.utils.parseEther("0.00005");
           const tx = await solMateContract.updateTaskExecDetails(
             address,
-            executionCost
+            executionCost,
           );
           const { gasUsed, effectiveGasPrice } = await tx.wait(1);
           console.log(ethers.utils.formatEther(gasUsed.mul(effectiveGasPrice)));
@@ -215,7 +208,6 @@ import { assert, expect } from "chai";
           await solMateContract.createAutomation(
             address,
             gasLimit,
-            interval,
             deployer,
             {
               value: funds,
@@ -247,7 +239,6 @@ import { assert, expect } from "chai";
         await solMateContract.createAutomation(
           address,
           gasLimit,
-          interval,
           deployer,
           {
             value: funds,
@@ -255,12 +246,4 @@ import { assert, expect } from "chai";
         );
       });
 
-      it("check automation", async () => {
-        // const tasks = await solMateContract.getAllTasks();
-        // const { gasLimit } = tasks[0];
-        await network.provider.send("evm_increaseTime", [interval - 1]);
-        await network.provider.send("evm_mine", []);
-        const data = await solMateContract.checkAutomationStatus(1);
-        console.log(data);
-      });
     });
