@@ -9,8 +9,8 @@ const deploySolMate: DeployFunction = async function ({
   const { deploy, log } = deployments;
 
   log("deploying contract...");
-  const solMateContract = await deploy("SolMate", {
-    contract: "SolMate",
+  const chainArchContract = await deploy("ChainArch", {
+    contract: "ChainArch",
     args: [],
     from: deployer,
     log: true,
@@ -19,4 +19,4 @@ const deploySolMate: DeployFunction = async function ({
 };
 export default deploySolMate;
 
-deploySolMate.tags = ["all", "solmate"];
+deploySolMate.tags = ["all", "chainarch"];
